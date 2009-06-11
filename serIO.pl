@@ -7,7 +7,7 @@ use warnings;
 
 use IO::Socket;
 
-my (@files, $method, $req, $res, $URI, $pipe);
+my (@files, $method, $req, $res, $URI);
 
 
 #$SIG{'INT'} = \&cleanup;
