@@ -12,7 +12,7 @@
 use strict;
 use IO::Socket;
 
-my ($socket, @files, $req, $client);
+my (@files, $req, $client);
 
 my $DOCROOT = '/home/arun/site/';
 my %error_page = (
@@ -22,9 +22,9 @@ my %error_page = (
 	501 => $DOCROOT.'501.html'	# not implemented
 );
 
-#$SIG{'INT'} = \&cleanup;
+$SIG{'INT'} = \&cleanup;
 
-$socket = new IO::Socket::INET ( 
+my $socket = new IO::Socket::INET ( 
 	LocalAddr => '172.17.1.50',
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
