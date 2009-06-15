@@ -6,6 +6,7 @@
 #	implement Getopt::Long
 #	usage() function
 #	log to syslog
+#	fork() children
 #	daemonize 
 #	persistent connections
 
@@ -14,7 +15,7 @@ use IO::Socket;
 
 my ($socket, @files, $req, $client);
 
-my $DOCROOT = '/home/arun/site/';
+my $DOCROOT = '/home/arun/docs/';
 my %error_page = (
 	403 => $DOCROOT.'403.html',	# forbidden
 	404 => $DOCROOT.'404.html',	# not found
@@ -25,7 +26,7 @@ my %error_page = (
 #$SIG{'INT'} = \&cleanup;
 
 $socket = new IO::Socket::INET ( 
-	LocalAddr => '172.17.1.50',
+	LocalAddr => '127.0.0.1',
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
@@ -80,10 +81,9 @@ sub handle_req {
 			&log("406 Not Acceptable\n");
 			return 406;
 		}
-	} else {
-		&log("404 Not Found\n");
-		return 404;
 	}
+	&log("404 Not Found\n");
+	return 404;
 }
 sub respond_to {
 	my $status_code = shift; 
@@ -94,6 +94,7 @@ sub respond_to {
 
 	my $uri = (split / +/, $req)[1];
 	$uri =~ s/\/(.*)/$1/;
+	chomp($uri);
 
 	my $path = $DOCROOT.$uri;
 	if (-f $path) {
@@ -107,6 +108,7 @@ sub respond_to {
 			&gen_dir_list($uri, &getfiles($path));
 		}
 	}
+	return;
 }
 sub display {
 	my $file = shift;
@@ -127,18 +129,8 @@ sub gen_dir_list {
 		<table cellpadding=5>
 HEADER
 
-	my ($count, $modification_time);
+	my $count;
 	foreach my $f (@$files) {
-
-		# open $f to get its modification time
-		if (-f $DOCROOT.$uri.'/'.$f) {
-			open my $handle, $DOCROOT.$uri.'/'.$f or &log("open: $!\n");
-			$modification_time = scalar localtime((stat $handle)[9]); 
-		} else {
-			opendir my $handle, $DOCROOT.$uri.'/'.$f or &log("opendir: $!\n");
-			$modification_time = scalar localtime((stat $handle)[9]); 
-		}
-
 		printf $client "%s<td><a href=\"%s\">%s</a></td><td>%s</td></tr>",
 				# different colours for alternate rows
 				(++$count % 2 ? '<tr bgcolor="#e0ffd6">' : '<tr bgcolor="#ffdcd6">'),
@@ -146,7 +138,7 @@ HEADER
 			   	(-d $DOCROOT.$uri.'/'.$f ?  '/'.$uri.$f.'/' : '/'.$uri.$f),
 				# append a '/' to the end of dirs
 			   	(-d $DOCROOT.$uri.'/'.$f ?  $f.'/' : $f),
-			  	$modification_time;
+			  	scalar localtime((stat $DOCROOT.$uri.'/'.$f)[9]);
 	}
 
 	#print html footer
