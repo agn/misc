@@ -2,7 +2,8 @@
 
 #Caution: Big mess ahead
 #TODO: 
-#	get .. working in dir listing
+#	binmode()
+#	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
 #	log to syslog
@@ -13,9 +14,9 @@
 use strict;
 use IO::Socket;
 
-my (@files, $req, $client);
+my (@files, $req, $client, $seen, $method, $uri);
 
-my $DOCROOT = '/home/arun/docs/';
+my $DOCROOT = '/home/arun/downloads/';
 my %error_page = (
 	403 => $DOCROOT.'403.html',	# forbidden
 	404 => $DOCROOT.'404.html',	# not found
@@ -34,92 +35,100 @@ my $socket = new IO::Socket::INET (
 ) or die "$! \n";
 
 $socket->listen();
-&log("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
+logme("$$ Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
 while ($client = $socket->accept()) {
-	&log("Connection from ".$client->peerhost().":".$client->peerport()."\n");
+	logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
 
 	# get http request - first line
 	$req = <$client>;
-	&log($client->peerhost()." ".$req);
-	&respond_to( &handle_req($req) );
+	if (defined $req) {
+		logme($client->peerhost()." ".$req);
+		respond_to( handle_req($req) );
+	}
 
 	close $client;
 }
 
 sub cleanup { close $socket; die "Interrupted. Exiting...\n"; }
-sub log {
+
+sub logme {
 	my $msg = shift;
 	print scalar localtime," ", $msg;
 }
+
 sub getfiles {
 	my $dir = shift; 
 	opendir DIR, $dir or die "open:$!\n";
 	# remove . and .. from list of files
-	@files = grep { !/^\.(\.)?$/ } readdir DIR;
+	@files = grep { !/^\.?$/ } readdir DIR;
+	#@files = grep { !/^\.(\.)?$/ } readdir DIR;
 	closedir DIR;
 	return \@files;
 }
+
 sub handle_req {
-	my ($method, $uri) = split / +/, shift;
+	($method, $uri) = split / +/, shift;
 
 	if ($method !~ /^GET/) {
-		&log("501 Not Implemented\nr");
+		logme("501 Not Implemented\nr");
 		return 501;	
 	}
 
-	$uri =~ s/\/(.*)/$1/;								# strip the first slash
+	$uri =~ s/\/(.*)/$1/;			# strip the first slash
+	sanitize_uri() if defined $uri;
+	print "+++ $uri +++\n";
 
 	if (-e $DOCROOT.$uri) {
 		if (-f $DOCROOT.$uri) {
-			&log("200 HTTP OK\n");
+			logme("200 HTTP OK\n");
 			return 200;
 		} elsif (-d $DOCROOT.$uri) {
-			&log("200 HTTP OK\n");
+			logme("200 HTTP OK\n");
 			return 200;
 		} else {
-			&log("406 Not Acceptable\n");
+			logme("406 Not Acceptable\n");
 			return 406;
 		}
 	}
-	&log("404 Not Found\n");
+	logme("404 Not Found\n");
 	return 404;
 }
+
 sub respond_to {
 	my $status_code = shift; 
 	unless ($status_code == 200) {
-		&display($error_page{$status_code}) if (-f $error_page{$status_code});
+		send_file($error_page{$status_code}) if (-f $error_page{$status_code});
 		return;
 	}
 
-	my $uri = (split / +/, $req)[1];
-	$uri =~ s/\/(.*)/$1/;
 	chomp($uri);
-
 	my $path = $DOCROOT.$uri;
 	if (-f $path) {
-		&display($path) ;
+		send_file($path) ;
 		return;
 	}
 	if (-d $path) {
 		if (-f $path.'index.html') {
-			&display($path.'index.html');
+			send_file($path.'index.html');
 		} else {
-			&gen_dir_list($uri, &getfiles($path));
+			gen_dir_list($uri, getfiles($path));
 		}
 	}
 	return;
 }
-sub display {
+
+sub send_file {
 	my $file = shift;
-	open RES, $file or die "open: $file: $!";
-	&log("Sending $file\n");
+	open RES, '<', $file or die "open: $file: $!";
+	logme("Sending $file\n");
 	print $client $_ while (<RES>);
 	close RES;
 }
+
 sub gen_dir_list {
 	my ($uri, $files) = @_;
-	&log("[info] dir listing request\n");
+	logme("[info] dir listing request\n");
 
 	# print html header
 	print $client <<HEADER;
@@ -148,4 +157,40 @@ HEADER
 	</body>
 	</html>
 FOOTER
+}
+
+sub sanitize_uri {
+	my @dirs = split /\//, $uri;
+	$seen = 0;
+
+	print "Dirs: @dirs \n";
+
+	my $num = grep { $_ eq '..' } @dirs;
+	print "Number of ..: $num\n";
+
+	while ($seen < $num) {
+		if ( $dirs[0] eq '..' ) { 
+			print "show root\n";
+			$uri = '';
+			return $uri;
+		} else {
+			print "Sx: @dirs\n";
+			reduce_path(\@dirs);
+			print "Rx: @dirs\n";
+			print "Seen: $seen\n";
+		}   
+	}
+	return join('/', @dirs);
+}
+
+sub reduce_path {
+    my $dirs = shift;
+    for (1..((scalar @$dirs) - 1)) {
+        if (@$dirs[$_] eq '..') {
+            $seen++;
+            splice @$dirs, $_, 1;
+            splice @$dirs, ($_ - 1), 1;
+            return $dirs;
+        }
+    }
 }
