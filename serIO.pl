@@ -3,6 +3,7 @@
 #Caution: Big mess ahead
 #TODO: 
 #	binmode()
+#	http response headers
 #	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
@@ -15,11 +16,12 @@ use strict;
 use IO::Socket;
 use POSIX;
 
+
+my $DEBUG = 1;
+my $DOCROOT = '/home/arun/downloads/';
+
 my (@files, @request, $req, $client, $seen, $uri);
 
-my $DEBUG = 0;
-
-my $DOCROOT = '/home/arun/downloads/';
 my %error_page = (
 	403 => $DOCROOT.'403.html',	# forbidden
 	404 => $DOCROOT.'404.html',	# not found
@@ -47,10 +49,9 @@ while ($client = $socket->accept()) {
 	# get http request - first line
 	logme("--- HTTP Request ---\n") if $DEBUG;
 	while (<$client>) {
-#		chomp $_;
+		last if /^\r\n$/;
 		logme("$_") if $DEBUG;
 		push @request, $_ if /./;
-		last if /^\r\n$/;
 	}
 	logme("--- END ---\n") if $DEBUG;
 	$req = $request[0];
@@ -94,11 +95,21 @@ sub handle_req {
 
 	if (-e $DOCROOT.$uri) {
 		if (-f $DOCROOT.$uri) {
-			logme("200 HTTP OK\n");
-			return 200;
+			if (-r $DOCROOT.$uri) {
+				logme("200 HTTP OK\n");
+				return 200;
+			} else {
+				logme("403 Forbidden\n");
+				return 403;
+			}
 		} elsif (-d $DOCROOT.$uri) {
-			logme("200 HTTP OK\n");
-			return 200;
+			if (-r $DOCROOT.$uri && -x $DOCROOT.$uri) {
+				logme("200 HTTP OK\n");
+				return 200;
+			} else {
+				logme("403 Forbidden\n");
+				return 403;
+			}
 		} else {
 			logme("406 Not Acceptable\n");
 			return 406;
