@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl -w
+#!/usr/bin/perl -w
 
 #Caution: Big mess ahead
 #TODO: 
@@ -13,6 +13,7 @@
 
 use strict;
 use IO::Socket;
+use POSIX;
 
 my (@files, $req, $client, $seen, $method, $uri);
 
@@ -35,7 +36,7 @@ my $socket = new IO::Socket::INET (
 ) or die "$! \n";
 
 $socket->listen();
-logme("$$ Listening on ".$socket->sockhost().":".$socket->sockport."\n");
+logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
 while ($client = $socket->accept()) {
 	logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
@@ -54,7 +55,8 @@ sub cleanup { close $socket; die "Interrupted. Exiting...\n"; }
 
 sub logme {
 	my $msg = shift;
-	print scalar localtime," ", $msg;
+	my $ts  = strftime "%b %e %H:%M:%S", localtime;
+	print $ts," $0\[$$\]: $msg";
 }
 
 sub getfiles {
