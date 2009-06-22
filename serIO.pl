@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl -wT
 
 #Caution: Big mess ahead
 #TODO: 
@@ -15,6 +15,7 @@
 use strict;
 use IO::Socket;
 use POSIX;
+use LWP::MediaTypes;
 
 
 my $DEBUG = 1;
@@ -22,11 +23,11 @@ my $DOCROOT = '/home/arun/downloads/';
 
 my (@files, @request, $req, $client, $seen, $uri);
 
-my %error_page = (
-	403 => $DOCROOT.'403.html',	# forbidden
-	404 => $DOCROOT.'404.html',	# not found
-	406 => $DOCROOT.'406.html',	# not acceptable
-	501 => $DOCROOT.'501.html'	# not implemented
+my %response = (
+	403 => [ 'Forbidden',       $DOCROOT.'403.html'],
+	404 => [ 'Not Found',       $DOCROOT.'404.html'],
+	406 => [ 'Not Acceptable',  $DOCROOT.'406.html'],
+	501 => [ 'Not Implemented', $DOCROOT.'501.html']
 );
 
 $SIG{'INT'} = \&cleanup;
@@ -47,13 +48,13 @@ while ($client = $socket->accept()) {
 	logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
 
 	# get http request - first line
-	logme("--- HTTP Request ---\n") if $DEBUG;
+	logme("[debug] --- HTTP Request ---\n") if $DEBUG;
 	while (<$client>) {
 		last if /^\r\n$/;
-		logme("$_") if $DEBUG;
-		push @request, $_ if /./;
+		logme("[debug] $_") if $DEBUG;
+		push @request, $_;
 	}
-	logme("--- END ---\n") if $DEBUG;
+	logme("[debug] --- END ---\n") if $DEBUG;
 	$req = $request[0];
 	if (defined $req) {
 		logme($client->peerhost()." ".$req);
@@ -91,7 +92,7 @@ sub handle_req {
 
 	$uri =~ s/\/(.*)/$1/;			# strip the first slash
 	sanitize_uri() if defined $uri;
-	logme("URI: $uri\n") if $DEBUG;
+	logme("[debug] URI: $uri\n") if $DEBUG;
 
 	if (-e $DOCROOT.$uri) {
 		if (-f $DOCROOT.$uri) {
@@ -122,7 +123,8 @@ sub handle_req {
 sub respond_to {
 	my $status_code = shift; 
 	unless ($status_code == 200) {
-		send_file($error_page{$status_code}) if (-f $error_page{$status_code});
+		send_file($response{$status_code}->[1]) 
+			if (-f $response{$status_code}->[1]);
 		return;
 	}
 
@@ -193,21 +195,21 @@ sub sanitize_uri {
 	my @dirs = split /\//, $uri;
 	$seen = 0;
 
-	logme("Dirs: @dirs \n") if $DEBUG;
+	logme("[debug] Dirs: @dirs \n") if $DEBUG;
 
 	my $num = grep { $_ eq '..' } @dirs;
-	logme("Number of ..: $num\n") if $DEBUG;
+	logme("[debug] Number of ..: $num\n") if $DEBUG;
 
 	while ($seen < $num) {
 		if ( $dirs[0] eq '..' ) { 
-			logme("show root\n") if $DEBUG;
+			logme("[debug] show root\n") if $DEBUG;
 			$uri = '';
 			return $uri;
 		} else {
-			logme("Sx: @dirs\n") if $DEBUG;
+			logme("[debug] Sx: @dirs\n") if $DEBUG;
 			reduce_path(\@dirs);
-			logme("Rx: @dirs\n") if $DEBUG;
-			logme("Seen: $seen\n") if $DEBUG;
+			logme("[debug] Rx: @dirs\n") if $DEBUG;
+			logme("[debug] Seen: $seen\n") if $DEBUG;
 		}   
 	}
 	return join('/', @dirs);
@@ -224,3 +226,9 @@ sub reduce_path {
         }
     }
 }
+#sub send_resp_headers {
+#	my @response = (
+#		"HTTP/1.0 status_code response{status_code}->[0]\r\n",
+#		"Content-Type: my media_type"
+#	)
+#}
