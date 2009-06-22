@@ -15,7 +15,7 @@ use strict;
 use IO::Socket;
 use POSIX;
 
-my (@files, $req, $client, $seen, $method, $uri);
+my (@files, $req, $client, $seen, $uri);
 
 my $DOCROOT = '/home/arun/downloads/';
 my %error_page = (
@@ -33,7 +33,7 @@ my $socket = new IO::Socket::INET (
 	Proto     => 'tcp',
 	Listen    => 5,
 	ReuseAddr => 1
-) or die "$! \n";
+) or die "socket(): $! \n";
 
 $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
@@ -62,17 +62,17 @@ sub logme {
 sub getfiles {
 	my $dir = shift; 
 	opendir DIR, $dir or die "open:$!\n";
-	# remove . and .. from list of files
-	@files = grep { !/^\.?$/ } readdir DIR;
+	# remove . from list of files
+	@files = grep { !/^\.$/ } readdir DIR;
 	#@files = grep { !/^\.(\.)?$/ } readdir DIR;
 	closedir DIR;
 	return \@files;
 }
 
 sub handle_req {
-	($method, $uri) = split / +/, shift;
+	(my $method, $uri) = split / +/, shift;
 
-	if ($method !~ /^GET/) {
+	if ($method !~ /^GET/i) {
 		logme("501 Not Implemented\nr");
 		return 501;	
 	}
@@ -114,7 +114,7 @@ sub respond_to {
 		if (-f $path.'index.html') {
 			send_file($path.'index.html');
 		} else {
-			gen_dir_list($uri, getfiles($path));
+			send_dir_list($uri, getfiles($path));
 		}
 	}
 	return;
@@ -122,13 +122,19 @@ sub respond_to {
 
 sub send_file {
 	my $file = shift;
-	open RES, '<', $file or die "open: $file: $!";
-	logme("Sending $file\n");
+	if (-B $file) {
+		open RES, '<', $file or die "open: $file: $!";
+		binmode RES, ':raw';
+		logme("Sending binary file $file\n");
+	} else {
+		open RES, '<', $file or die "open: $file: $!";
+		logme("Sending text file $file\n");
+	}
 	print $client $_ while (<RES>);
 	close RES;
 }
 
-sub gen_dir_list {
+sub send_dir_list {
 	my ($uri, $files) = @_;
 	logme("[info] dir listing request\n");
 
