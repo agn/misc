@@ -15,7 +15,9 @@ use strict;
 use IO::Socket;
 use POSIX;
 
-my (@files, $req, $client, $seen, $uri);
+my (@files, @request, $req, $client, $seen, $uri);
+
+my $DEBUG = 0;
 
 my $DOCROOT = '/home/arun/downloads/';
 my %error_page = (
@@ -39,10 +41,19 @@ $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
 while ($client = $socket->accept()) {
+	@request = ();
 	logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
 
 	# get http request - first line
-	$req = <$client>;
+	logme("--- HTTP Request ---\n") if $DEBUG;
+	while (<$client>) {
+#		chomp $_;
+		logme("$_") if $DEBUG;
+		push @request, $_ if /./;
+		last if /^\r\n$/;
+	}
+	logme("--- END ---\n") if $DEBUG;
+	$req = $request[0];
 	if (defined $req) {
 		logme($client->peerhost()." ".$req);
 		respond_to( handle_req($req) );
@@ -79,7 +90,7 @@ sub handle_req {
 
 	$uri =~ s/\/(.*)/$1/;			# strip the first slash
 	sanitize_uri() if defined $uri;
-	print "+++ $uri +++\n";
+	logme("URI: $uri\n") if $DEBUG;
 
 	if (-e $DOCROOT.$uri) {
 		if (-f $DOCROOT.$uri) {
@@ -125,10 +136,10 @@ sub send_file {
 	if (-B $file) {
 		open RES, '<', $file or die "open: $file: $!";
 		binmode RES, ':raw';
-		logme("Sending binary file $file\n");
+		logme("Sending B $file\n");
 	} else {
 		open RES, '<', $file or die "open: $file: $!";
-		logme("Sending text file $file\n");
+		logme("Sending T $file\n");
 	}
 	print $client $_ while (<RES>);
 	close RES;
@@ -171,21 +182,21 @@ sub sanitize_uri {
 	my @dirs = split /\//, $uri;
 	$seen = 0;
 
-	print "Dirs: @dirs \n";
+	logme("Dirs: @dirs \n") if $DEBUG;
 
 	my $num = grep { $_ eq '..' } @dirs;
-	print "Number of ..: $num\n";
+	logme("Number of ..: $num\n") if $DEBUG;
 
 	while ($seen < $num) {
 		if ( $dirs[0] eq '..' ) { 
-			print "show root\n";
+			logme("show root\n") if $DEBUG;
 			$uri = '';
 			return $uri;
 		} else {
-			print "Sx: @dirs\n";
+			logme("Sx: @dirs\n") if $DEBUG;
 			reduce_path(\@dirs);
-			print "Rx: @dirs\n";
-			print "Seen: $seen\n";
+			logme("Rx: @dirs\n") if $DEBUG;
+			logme("Seen: $seen\n") if $DEBUG;
 		}   
 	}
 	return join('/', @dirs);
