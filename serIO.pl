@@ -152,7 +152,8 @@ sub send_file {
 		binmode RES;
 		binmode $client;
 		logme("Sending B $file\n");
-		while (read(RES, $buffer, 256)) { 
+		while (my $len = read(RES, $buffer, 256)) { 
+			die "read(): $!" unless defined $len;
 			print $client $buffer;
 		}
 	} else {
