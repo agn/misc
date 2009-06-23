@@ -18,7 +18,7 @@ use POSIX;
 use LWP::MediaTypes;
 
 
-my $DEBUG = 1;
+my $DEBUG = 0;
 my $DOCROOT = '/home/arun/downloads/';
 
 my (@files, @request, $req, $client, $seen, $uri);
@@ -146,15 +146,20 @@ sub respond_to {
 
 sub send_file {
 	my $file = shift;
+	my $buffer;
 	if (-B $file) {
 		open RES, '<', $file or die "open: $file: $!";
-		binmode RES, ':raw';
+		binmode RES;
+		binmode $client;
 		logme("Sending B $file\n");
+		while (read(RES, $buffer, 256)) { 
+			print $client $buffer;
+		}
 	} else {
 		open RES, '<', $file or die "open: $file: $!";
 		logme("Sending T $file\n");
+		print $client $_ while (<RES>);
 	}
-	print $client $_ while (<RES>);
 	close RES;
 }
 
