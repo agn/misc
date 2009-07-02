@@ -21,9 +21,9 @@ use LWP::MediaTypes;
 my $DEBUG = 0;
 my $DOCROOT = '/home/arun/downloads/';
 
-my (@files, @request, $req, $client, $seen, $uri);
+my (@files, @request, $req, $client, $seen, $uri, $status_code);
 
-my %response = (
+my %error = (
 	403 => [ 'Forbidden',       $DOCROOT.'403.html'],
 	404 => [ 'Not Found',       $DOCROOT.'404.html'],
 	406 => [ 'Not Acceptable',  $DOCROOT.'406.html'],
@@ -34,7 +34,7 @@ $SIG{'INT'} = \&cleanup;
 
 my $socket = new IO::Socket::INET ( 
 	LocalAddr => '172.17.1.50',
-	LocalPort => (shift || 4321),
+	LocalPort => (shift || 1337),
 	Proto     => 'tcp',
 	Listen    => 5,
 	ReuseAddr => 1
@@ -58,7 +58,7 @@ while ($client = $socket->accept()) {
 	$req = $request[0];
 	if (defined $req) {
 		logme($client->peerhost()." ".$req);
-		respond_to( handle_req($req) );
+		handle_req($req);
 	}
 
 	close $client;
@@ -87,52 +87,56 @@ sub handle_req {
 
 	if ($method !~ /^GET/i) {
 		logme("501 Not Implemented\nr");
-		return 501;	
-	}
+		$status_code = 501;
+	} else {
+		$uri =~ s/\/(.*)/$1/;			# strip the first slash
+		sanitize_uri() if defined $uri;
+		logme("[debug] URI: $uri\n") if $DEBUG;
 
-	$uri =~ s/\/(.*)/$1/;			# strip the first slash
-	sanitize_uri() if defined $uri;
-	logme("[debug] URI: $uri\n") if $DEBUG;
-
-	if (-e $DOCROOT.$uri) {
-		if (-f $DOCROOT.$uri) {
-			if (-r $DOCROOT.$uri) {
-				logme("200 HTTP OK\n");
-				return 200;
+		if (-e $DOCROOT.$uri) {
+			if (-f $DOCROOT.$uri) {
+				if (-r $DOCROOT.$uri) {
+					logme("200 HTTP OK\n");
+					$status_code = 200;
+				} else {
+					logme("403 Forbidden\n");
+					$status_code = 403;
+				}
+			} elsif (-d $DOCROOT.$uri) {
+				if (-r $DOCROOT.$uri && -x $DOCROOT.$uri) {
+					logme("200 HTTP OK\n");
+					$status_code = 200;
+				} else {
+					logme("403 Forbidden\n");
+					$status_code = 403;
+				}
 			} else {
-				logme("403 Forbidden\n");
-				return 403;
-			}
-		} elsif (-d $DOCROOT.$uri) {
-			if (-r $DOCROOT.$uri && -x $DOCROOT.$uri) {
-				logme("200 HTTP OK\n");
-				return 200;
-			} else {
-				logme("403 Forbidden\n");
-				return 403;
+				logme("406 Not Acceptable\n");
+				$status_code = 406;
 			}
 		} else {
-			logme("406 Not Acceptable\n");
-			return 406;
+			logme("404 Not Found\n");
+			$status_code = 404;
 		}
 	}
-	logme("404 Not Found\n");
-	return 404;
-}
 
-sub respond_to {
-	my $status_code = shift; 
 	unless ($status_code == 200) {
-		send_file($response{$status_code}->[1]) 
-			if (-f $response{$status_code}->[1]);
-		return;
+		if (-f $error{$status_code}->[1]) {
+			send_file($error{$status_code}->[1]);
+		} else {
+			logme($error{$status_code}->[1]." missing\n");
+			send_resp_headers("text/plain");
+			print $client $status_code." ".$error{$status_code}->[0];
+		}
+		return 0;
 	}
 
 	chomp($uri);
 	my $path = $DOCROOT.$uri;
+
 	if (-f $path) {
+		#XXX what if the file isn't redable anymore ?
 		send_file($path) ;
-		return;
 	}
 	if (-d $path) {
 		if (-f $path.'index.html') {
@@ -141,14 +145,18 @@ sub respond_to {
 			send_dir_list($uri, getfiles($path));
 		}
 	}
-	return;
+	return 0;
 }
 
 sub send_file {
 	my $file = shift;
 	my $buffer;
+	my $media_type = guess_media_type( $file );
+
+	send_resp_headers( $media_type );
+
+	open RES, '<', $file or die "open: $file: $!";
 	if (-B $file) {
-		open RES, '<', $file or die "open: $file: $!";
 		binmode RES;
 		binmode $client;
 		logme("Sending B $file\n");
@@ -157,7 +165,6 @@ sub send_file {
 			print $client $buffer;
 		}
 	} else {
-		open RES, '<', $file or die "open: $file: $!";
 		logme("Sending T $file\n");
 		print $client $_ while (<RES>);
 	}
@@ -167,6 +174,7 @@ sub send_file {
 sub send_dir_list {
 	my ($uri, $files) = @_;
 	logme("[info] dir listing request\n");
+	send_resp_headers("text/html");
 
 	# print html header
 	print $client <<HEADER;
@@ -232,9 +240,14 @@ sub reduce_path {
         }
     }
 }
-#sub send_resp_headers {
-#	my @response = (
-#		"HTTP/1.0 status_code response{status_code}->[0]\r\n",
-#		"Content-Type: my media_type"
-#	)
-#}
+sub send_resp_headers {
+	my $media_type = shift;
+	logme("$media_type:$status_code: ".$error{$status_code}->[0]."\n");
+	my @response = (
+		"HTTP/1.0 $status_code ".$error{$status_code}->[0]."\r\n",
+		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
+		"\r\n"
+	);
+	print $client $_ foreach (@response);
+	return 0;
+}
