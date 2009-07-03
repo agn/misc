@@ -1,9 +1,9 @@
-#!/usr/bin/perl -wT
+#!/usr/bin/perl -w
 
 #Caution: Big mess ahead
 #TODO: 
-#	binmode()
-#	http response headers
+#	check for connection close from client while sending data
+#	strip variables in GET request
 #	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
@@ -14,16 +14,17 @@
 
 use strict;
 use IO::Socket;
-use POSIX;
 use LWP::MediaTypes;
+use POSIX;
 
 
-my $DEBUG = 0;
+my $DEBUG = 1;
 my $DOCROOT = '/home/arun/downloads/';
 
 my (@files, @request, $req, $client, $seen, $uri, $status_code);
 
 my %error = (
+	200 => [ 'OK'				                   ],
 	403 => [ 'Forbidden',       $DOCROOT.'403.html'],
 	404 => [ 'Not Found',       $DOCROOT.'404.html'],
 	406 => [ 'Not Acceptable',  $DOCROOT.'406.html'],
@@ -34,7 +35,7 @@ $SIG{'INT'} = \&cleanup;
 
 my $socket = new IO::Socket::INET ( 
 	LocalAddr => '172.17.1.50',
-	LocalPort => (shift || 1337),
+	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
 	ReuseAddr => 1
@@ -89,7 +90,7 @@ sub handle_req {
 		logme("501 Not Implemented\nr");
 		$status_code = 501;
 	} else {
-		$uri =~ s/\/(.*)/$1/;			# strip the first slash
+		logme("[debug] URI orginal: $uri\n") if $DEBUG;
 		sanitize_uri() if defined $uri;
 		logme("[debug] URI: $uri\n") if $DEBUG;
 
@@ -131,11 +132,12 @@ sub handle_req {
 		return 0;
 	}
 
-	chomp($uri);
+	# http request headers are separated by '\r\n'
+	$uri =~ s/(.*?)\r\n/$1/;
 	my $path = $DOCROOT.$uri;
 
 	if (-f $path) {
-		#XXX what if the file isn't redable anymore ?
+		#XXX what if the file isn't readable anymore ?
 		send_file($path) ;
 	}
 	if (-d $path) {
@@ -206,6 +208,9 @@ FOOTER
 }
 
 sub sanitize_uri {
+	# strip the first slash and remove GET variables
+	$uri =~ s/^\/([^\?]*)\?.*/$1/;
+
 	my @dirs = split /\//, $uri;
 	$seen = 0;
 
@@ -240,9 +245,10 @@ sub reduce_path {
         }
     }
 }
+
 sub send_resp_headers {
 	my $media_type = shift;
-	logme("$media_type:$status_code: ".$error{$status_code}->[0]."\n");
+	logme("$media_type:$status_code:".$error{$status_code}->[0]."\n") if $DEBUG;
 	my @response = (
 		"HTTP/1.0 $status_code ".$error{$status_code}->[0]."\r\n",
 		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
