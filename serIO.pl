@@ -18,13 +18,13 @@ use LWP::MediaTypes;
 use POSIX;
 
 
-my $DEBUG = 1;
-my $DOCROOT = '/home/arun/downloads/';
+my $DEBUG = 0;
+my $DOCROOT = '/home/arun/downloads/';     # add / to the end of docroot
 
 my (@files, @request, $req, $client, $seen, $uri, $status_code);
 
-my %error = (
-	200 => [ 'OK'				                   ],
+my %msgs = (
+	200 => [ 'OK'                                  ],
 	403 => [ 'Forbidden',       $DOCROOT.'403.html'],
 	404 => [ 'Not Found',       $DOCROOT.'404.html'],
 	406 => [ 'Not Acceptable',  $DOCROOT.'406.html'],
@@ -34,7 +34,7 @@ my %error = (
 $SIG{'INT'} = \&cleanup;
 
 my $socket = new IO::Socket::INET ( 
-	LocalAddr => '172.17.1.50',
+	LocalAddr => (shift || '172.17.1.50'),
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
@@ -122,12 +122,12 @@ sub handle_req {
 	}
 
 	unless ($status_code == 200) {
-		if (-f $error{$status_code}->[1]) {
-			send_file($error{$status_code}->[1]);
+		if (-f $msgs{$status_code}->[1]) {
+			send_file($msgs{$status_code}->[1]);
 		} else {
-			logme($error{$status_code}->[1]." missing\n");
+			logme($msgs{$status_code}->[1]." missing\n");
 			send_resp_headers("text/plain");
-			print $client $status_code." ".$error{$status_code}->[0];
+			print $client $status_code." ".$msgs{$status_code}->[0];
 		}
 		return 0;
 	}
@@ -209,7 +209,7 @@ FOOTER
 
 sub sanitize_uri {
 	# strip the first slash and remove GET variables
-	$uri =~ s/^\/([^\?]*)\?.*/$1/;
+	$uri =~ s/^\/([^\?]*).*/$1/;
 
 	my @dirs = split /\//, $uri;
 	$seen = 0;
@@ -248,9 +248,9 @@ sub reduce_path {
 
 sub send_resp_headers {
 	my $media_type = shift;
-	logme("$media_type:$status_code:".$error{$status_code}->[0]."\n") if $DEBUG;
+	logme("$media_type:$status_code:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	my @response = (
-		"HTTP/1.0 $status_code ".$error{$status_code}->[0]."\r\n",
+		"HTTP/1.0 $status_code ".$msgs{$status_code}->[0]."\r\n",
 		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
 		"\r\n"
 	);
