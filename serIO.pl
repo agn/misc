@@ -18,7 +18,7 @@ use LWP::MediaTypes;
 use POSIX;
 
 
-my $DEBUG = 0;
+my $DEBUG = 1;
 my $DOCROOT = '/home/arun/downloads/';     # add / to the end of docroot
 
 my (@files, @request, $req, $client, $seen, $uri, $status_code);
@@ -34,12 +34,12 @@ my %msgs = (
 $SIG{'INT'} = \&cleanup;
 
 my $socket = new IO::Socket::INET ( 
-	LocalAddr => (shift || '172.17.1.50'),
+	LocalAddr => '172.17.1.50',
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
 	ReuseAddr => 1
-) or die "socket(): $! \n";
+) or die "socket(): $!\n";
 
 $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
@@ -123,7 +123,7 @@ sub handle_req {
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
-			send_file($msgs{$status_code}->[1]);
+			send_file($msgs{$status_code}->[1], );
 		} else {
 			logme($msgs{$status_code}->[1]." missing\n");
 			send_resp_headers("text/plain");
@@ -155,7 +155,8 @@ sub send_file {
 	my $buffer;
 	my $media_type = guess_media_type( $file );
 
-	send_resp_headers( $media_type );
+	my $size = -s $file;
+	send_resp_headers( $media_type, $size );
 
 	open RES, '<', $file or die "open: $file: $!";
 	if (-B $file) {
@@ -248,9 +249,11 @@ sub reduce_path {
 
 sub send_resp_headers {
 	my $media_type = shift;
-	logme("$media_type:$status_code:".$msgs{$status_code}->[0]."\n") if $DEBUG;
+	my $content_length = shift || 99999999999;
+	logme("$media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	my @response = (
 		"HTTP/1.0 $status_code ".$msgs{$status_code}->[0]."\r\n",
+		"Content-Length: $content_length\r\n",
 		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
 		"\r\n"
 	);
