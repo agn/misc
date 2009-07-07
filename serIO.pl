@@ -166,7 +166,7 @@ sub send_file {
 	} else {
 		logme("Sending T $file\n");
 	}
-	while (my $len = read(RES, $buffer, 256)) { 
+	while (my $len = read(RES, $buffer, 4096)) { 
 		die "read(): $!" unless defined $len;
 		if ($client->connected()) {
 			print $client $buffer;
@@ -253,23 +253,21 @@ sub reduce_path {
 sub send_resp_headers {
 	my $media_type = shift;
 	my $content_length = shift;
-	my @response;
+	my @response = (
+			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n"
+		);
 	if (defined $content_length) {
 		logme("$media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
-		@response = (
-			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n",
-			"Content-Length: $content_length\r\n",
-			"Content-Type: $media_type; charset=ISO-8859-4\r\n",
-			"\r\n"
+		push @response, (
+			"Content-Length: $content_length\r\n"
 		);
 	} else {
 		logme("$media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
-		@response = (
-			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n",
-			"Content-Type: $media_type; charset=ISO-8859-4\r\n",
-			"\r\n"
-		);
 	}
+	push @response, (
+		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
+		"\r\n"
+	);
 	print $client $_ foreach (@response);
 	return 0;
 }
