@@ -169,7 +169,7 @@ sub send_file {
 	logme("Sending $file\n");
 	while (my $len = read(RES, $buffer, 4096)) { 
 		die "read(): $!" unless defined $len;
-		if ($client->connected()) {
+		if ($len != 0 && $client->connected()) {
 			print $client $buffer;
 		} else {
 			last;
@@ -195,12 +195,12 @@ HEADER
 	foreach my $f (@$files) {
 		printf $client "%s<td><a href=\"%s\">%s</a></td><td>%s</td></tr>",
 				# different colours for alternate rows
-				(++$count % 2 ? '<tr bgcolor="#e0ffd6">' : '<tr bgcolor="#ffdcd6">'),
+				(++$count % 2 ? '<tr bgcolor="#cfcfcf">' : '<tr bgcolor="#dddddd">'),
 				# genereate href links
 			   	(-d $DOCROOT.$uri.'/'.$f ?  '/'.$uri.$f.'/' : '/'.$uri.$f),
 				# append a '/' to the end of dirs
 			   	(-d $DOCROOT.$uri.'/'.$f ?  $f.'/' : $f),
-			  	scalar localtime((stat $DOCROOT.$uri.'/'.$f)[9]);
+			  	strftime "%d-%b-%Y %H:%S", localtime((stat $DOCROOT.$uri.'/'.$f)[9]);
 	}
 
 	#print html footer
