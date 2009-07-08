@@ -2,8 +2,6 @@
 
 #Caution: Big mess ahead
 #TODO: 
-#	check for connection close from client while sending data
-#	strip variables in GET request
 #	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
@@ -75,11 +73,12 @@ sub logme {
 
 sub getfiles {
 	my $dir = shift; 
+
 	opendir DIR, $dir or die "open:$!\n";
 	# remove . from list of files
 	@files = grep { !/^\.$/ } readdir DIR;
-	#@files = grep { !/^\.(\.)?$/ } readdir DIR;
 	closedir DIR;
+
 	return \@files;
 }
 
@@ -123,10 +122,13 @@ sub handle_req {
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
-			send_file($msgs{$status_code}->[1], );
+			my $size = -s $msgs{$status_code}->[1];
+			send_resp_headers("text/plain", $size);
+			send_file($msgs{$status_code}->[1]);
 		} else {
 			logme($msgs{$status_code}->[1]." missing\n");
-			send_resp_headers("text/plain");
+			send_resp_headers("text/plain", 
+				length($status_code." ".$msgs{$status_code}->[0]));
 			print $client $status_code." ".$msgs{$status_code}->[0];
 		}
 		return 0;
@@ -162,10 +164,9 @@ sub send_file {
 	if (-B $file) {
 		binmode RES;
 		binmode $client;
-		logme("Sending B $file\n");
-	} else {
-		logme("Sending T $file\n");
+		logme("[debug] setting binmode on socket\n") if $DEBUG;
 	}
+	logme("Sending $file\n");
 	while (my $len = read(RES, $buffer, 4096)) { 
 		die "read(): $!" unless defined $len;
 		if ($client->connected()) {
@@ -253,21 +254,34 @@ sub reduce_path {
 sub send_resp_headers {
 	my $media_type = shift;
 	my $content_length = shift;
+
+	# HTTP use GMT 
+	my $date = strftime "%a, %d %b %Y %H:%M:%S GMT", gmtime();
+
 	my @response = (
-			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n"
+			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n",
+			"Date: $date\r\n"
 		);
-	if (defined $content_length) {
-		logme("$media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
+	if ($content_length) {
+		logme("[debug] $media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 		push @response, (
 			"Content-Length: $content_length\r\n"
 		);
 	} else {
-		logme("$media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
+		logme("[debug] $media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	}
 	push @response, (
-		"Content-Type: $media_type; charset=ISO-8859-4\r\n",
+		"Content-Type: $media_type; charset=iso-8859-1\r\n",
+		"Connection: close\r\n",
 		"\r\n"
 	);
-	print $client $_ foreach (@response);
+
+	logme("[debug] --- HTTP Response ---\n") if $DEBUG;
+	foreach (@response) {
+		logme("[debug] $_") if $DEBUG;
+		print $client $_;
+	}
+	logme("[debug] --- END ---\n") if $DEBUG;
+
 	return 0;
 }
