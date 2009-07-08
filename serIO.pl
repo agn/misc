@@ -2,6 +2,7 @@
 
 #Caution: Big mess ahead
 #TODO: 
+#	url decoding
 #	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
@@ -14,10 +15,11 @@ use strict;
 use IO::Socket;
 use LWP::MediaTypes;
 use POSIX;
+use URI::Escape;
 
 
 my $DEBUG = 1;
-my $DOCROOT = '/home/arun/downloads/';     # add / to the end of docroot
+my $DOCROOT = '/home/arun/downloads'; 
 
 my (@files, @request, $req, $client, $seen, $uri, $status_code);
 
@@ -82,8 +84,8 @@ sub getfiles {
 	return \@files;
 }
 
-sub handle_req {
-	(my $method, $uri) = split / +/, shift;
+sub set_status_code {
+	(my $method, $uri) = @_;
 
 	if ($method !~ /^GET/i) {
 		logme("501 Not Implemented\nr");
@@ -119,6 +121,13 @@ sub handle_req {
 			$status_code = 404;
 		}
 	}
+	return 0;
+}
+
+sub handle_req {
+	(my $method, $uri) = split / +/, shift;
+
+	set_status_code( $method, $uri );
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
@@ -186,7 +195,7 @@ sub send_dir_list {
 	# print html header
 	print $client <<HEADER;
 	<html>
-		<head><title>dir listing for: /$uri</title></head>
+		<head><title>dir listing for: $uri</title></head>
 		<body>
 		<table cellpadding=5>
 HEADER
@@ -197,7 +206,18 @@ HEADER
 				# different colours for alternate rows
 				(++$count % 2 ? '<tr bgcolor="#cfcfcf">' : '<tr bgcolor="#dddddd">'),
 				# genereate href links
-			   	(-d $DOCROOT.$uri.'/'.$f ?  '/'.$uri.$f.'/' : '/'.$uri.$f),
+				#(-d $DOCROOT.$uri.'/'.$f ?  '/'.$uri.$f.'/' : '/'.$uri.$f),
+				#add a / if the url doesn't contain a / at the end
+				(-d $DOCROOT.$uri.'/'.$f 
+					? ( $uri =~ /\/$/ 
+						? $uri.uri_escape($f).'/' 
+						: $uri.'/'.uri_escape($f).'/'
+					)
+				   	: ( $uri =~ /\/$/ 
+						? $uri.uri_escape($f)
+					    : $uri.'/'.uri_escape($f)
+					)
+				),
 				# append a '/' to the end of dirs
 			   	(-d $DOCROOT.$uri.'/'.$f ?  $f.'/' : $f),
 			  	strftime "%d-%b-%Y %H:%S", localtime((stat $DOCROOT.$uri.'/'.$f)[9]);
@@ -213,8 +233,13 @@ FOOTER
 }
 
 sub sanitize_uri {
-	# strip the first slash and remove GET variables
-	$uri =~ s/^\/([^\?]*).*/$1/;
+	# strip first slash and GET variables
+	#$uri =~ s/^\/([^\?]*).*/$1/;
+	$uri =~ s/([^\?]*).*/$1/;
+
+	#experimental url decoding
+	#$uri =~ s/\%([a-fA-F0-9]{2})/chr(hex($1))/ge;
+	$uri = uri_unescape($uri);
 
 	my @dirs = split /\//, $uri;
 	$seen = 0;
