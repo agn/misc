@@ -2,7 +2,6 @@
 
 #Caution: Big mess ahead
 #TODO: 
-#	url decoding
 #	http://perlmonks.org/index.pl?node_id=771769
 #	implement Getopt::Long
 #	usage() function
@@ -24,11 +23,12 @@ my $DOCROOT = '/home/arun/downloads';
 my (@files, @request, $req, $client, $seen, $uri, $status_code);
 
 my %msgs = (
-	200 => [ 'OK'                                  ],
-	403 => [ 'Forbidden',       $DOCROOT.'403.html'],
-	404 => [ 'Not Found',       $DOCROOT.'404.html'],
-	406 => [ 'Not Acceptable',  $DOCROOT.'406.html'],
-	501 => [ 'Not Implemented', $DOCROOT.'501.html']
+	200 => [ 'OK'                                     ],
+	301 => [ 'Moved Permanently', $DOCROOT.'/301.html'],
+	403 => [ 'Forbidden',         $DOCROOT.'/403.html'],
+	404 => [ 'Not Found',         $DOCROOT.'/404.html'],
+	406 => [ 'Not Acceptable',    $DOCROOT.'/406.html'],
+	501 => [ 'Not Implemented',   $DOCROOT.'/501.html']
 );
 
 $SIG{'INT'} = \&cleanup;
@@ -131,8 +131,6 @@ sub handle_req {
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
-			my $size = -s $msgs{$status_code}->[1];
-			send_resp_headers("text/plain", $size);
 			send_file($msgs{$status_code}->[1]);
 		} else {
 			logme($msgs{$status_code}->[1]." missing\n");
@@ -146,6 +144,19 @@ sub handle_req {
 	# http request headers are separated by '\r\n'
 	$uri =~ s/(.*?)\r\n/$1/;
 	my $path = $DOCROOT.$uri;
+	logme("\$path: $path\n");
+	if ($path !~ /\/$/ && -d $path) {
+		$status_code = 301;
+			if (-f $msgs{$status_code}->[1]) {
+				send_file($msgs{$status_code}->[1]);
+			} else {
+				logme($msgs{$status_code}->[1]." missing\n");
+				send_resp_headers("text/plain", length($status_code." ".$msgs{$status_code}->[0]));
+				print $status_code." ".$msgs{$status_code}->[0];
+				print $client $status_code." ".$msgs{$status_code}->[0];
+			}
+		return 0;
+	}
 
 	if (-f $path) {
 		#XXX what if the file isn't readable anymore ?
@@ -295,6 +306,11 @@ sub send_resp_headers {
 	} else {
 		logme("[debug] $media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	}
+	if ($status_code == 301) {
+		push @response, (
+			'Location: http://'.inet_ntoa($socket->sockaddr()).':'.$socket->sockport()."${uri}/\r\n"
+		);
+	}
 	push @response, (
 		"Content-Type: $media_type; charset=iso-8859-1\r\n",
 		"Connection: close\r\n",
@@ -306,7 +322,7 @@ sub send_resp_headers {
 		logme("[debug] $_") if $DEBUG;
 		print $client $_;
 	}
-	logme("[debug] --- END ---\n") if $DEBUG;
+	logme("[debug] --- END ---\n\n") if $DEBUG;
 
 	return 0;
 }
