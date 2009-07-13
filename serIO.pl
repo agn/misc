@@ -95,27 +95,44 @@ sub set_status_code {
 		sanitize_uri() if defined $uri;
 		logme("[debug] URI: $uri\n") if $DEBUG;
 
-		if (-e $DOCROOT.$uri) {
-			if (-f $DOCROOT.$uri) {
-				if (-r $DOCROOT.$uri) {
+		my $path = $DOCROOT.$uri;
+		if (-e $path) {
+
+			# is a file
+			if (-f $path) {
+				if (-r $path) {
 					logme("200 HTTP OK\n");
 					$status_code = 200;
 				} else {
 					logme("403 Forbidden\n");
 					$status_code = 403;
 				}
-			} elsif (-d $DOCROOT.$uri) {
-				if (-r $DOCROOT.$uri && -x $DOCROOT.$uri) {
-					logme("200 HTTP OK\n");
-					$status_code = 200;
+
+			# is a directory 
+			} elsif (-d $path) {
+				if (-r $path && -x $path) {
+
+					# check for / at the end 
+					if ($path !~ m/\/$/) {
+						logme("301 Moved Permanently\n");
+						$status_code = 301;
+					} else {
+						logme("200 HTTP OK\n");
+						$status_code = 200;
+					}
+
 				} else {
 					logme("403 Forbidden\n");
 					$status_code = 403;
 				}
+
+			# not a file or directory
 			} else {
 				logme("406 Not Acceptable\n");
 				$status_code = 406;
 			}
+
+		# doesn't exist
 		} else {
 			logme("404 Not Found\n");
 			$status_code = 404;
@@ -141,27 +158,14 @@ sub handle_req {
 		return 0;
 	}
 
-	# http request headers are separated by '\r\n'
-	$uri =~ s/(.*?)\r\n/$1/;
 	my $path = $DOCROOT.$uri;
 	logme("\$path: $path\n");
-	if ($path !~ /\/$/ && -d $path) {
-		$status_code = 301;
-			if (-f $msgs{$status_code}->[1]) {
-				send_file($msgs{$status_code}->[1]);
-			} else {
-				logme($msgs{$status_code}->[1]." missing\n");
-				send_resp_headers("text/plain", length($status_code." ".$msgs{$status_code}->[0]));
-				print $status_code." ".$msgs{$status_code}->[0];
-				print $client $status_code." ".$msgs{$status_code}->[0];
-			}
-		return 0;
-	}
 
 	if (-f $path) {
 		#XXX what if the file isn't readable anymore ?
 		send_file($path) ;
 	}
+
 	if (-d $path) {
 		if (-f $path.'index.html') {
 			send_file($path.'index.html');
@@ -169,15 +173,17 @@ sub handle_req {
 			send_dir_list($uri, getfiles($path));
 		}
 	}
+
 	return 0;
 }
 
 sub send_file {
-	my $file = shift;
-	my $buffer;
-	my $media_type = guess_media_type( $file );
+	my $file       = shift;
 
-	my $size = -s $file;
+	my $media_type = guess_media_type( $file );
+	my $size       = -s $file;
+	my $buffer;
+
 	send_resp_headers( $media_type, $size );
 
 	open RES, '<', $file or die "open: $file: $!";
@@ -186,7 +192,7 @@ sub send_file {
 		binmode $client;
 		logme("[debug] setting binmode on socket\n") if $DEBUG;
 	}
-	logme("Sending $file\n");
+	logme("Sending $file\n\n");
 	while (my $len = read(RES, $buffer, 4096)) { 
 		die "read(): $!" unless defined $len;
 		if ($len != 0 && $client->connected()) {
@@ -214,23 +220,24 @@ HEADER
 	my $count;
 	foreach my $f (@$files) {
 		printf $client "%s<td><a href=\"%s\">%s</a></td><td>%s</td></tr>",
+
 				# different colours for alternate rows
-				(++$count % 2 ? '<tr bgcolor="#cfcfcf">' : '<tr bgcolor="#dddddd">'),
-				# genereate href links
-				#(-d $DOCROOT.$uri.'/'.$f ?  '/'.$uri.$f.'/' : '/'.$uri.$f),
-				#add a / if the url doesn't contain a / at the end
-				(-d $DOCROOT.$uri.'/'.$f 
-					? ( $uri =~ /\/$/ 
-						? $uri.uri_escape($f).'/' 
-						: $uri.'/'.uri_escape($f).'/'
-					)
-				   	: ( $uri =~ /\/$/ 
-						? $uri.uri_escape($f)
-					    : $uri.'/'.uri_escape($f)
-					)
+				(++$count % 2 
+					? '<tr bgcolor="#cfcfcf">'
+					: '<tr bgcolor="#dddddd">'
 				),
+
+				# genereate href links
+				(-d $DOCROOT.$uri.'/'.$f 
+					? $uri.uri_escape($f).'/'
+					: $uri.uri_escape($f)
+				),
+
 				# append a '/' to the end of dirs
-			   	(-d $DOCROOT.$uri.'/'.$f ?  $f.'/' : $f),
+			   	(-d $DOCROOT.$uri.'/'.$f 
+					?  $f.'/'
+					: $f
+				),
 			  	strftime "%d-%b-%Y %H:%S", localtime((stat $DOCROOT.$uri.'/'.$f)[9]);
 	}
 
@@ -253,7 +260,7 @@ sub sanitize_uri {
 	$uri = uri_unescape($uri);
 
 	my @dirs = split /\//, $uri;
-	$seen = 0;
+	my $seen = 0;
 
 	logme("[debug] Dirs: @dirs \n") if $DEBUG;
 
@@ -262,42 +269,44 @@ sub sanitize_uri {
 
 	while ($seen < $num) {
 		if ( $dirs[0] eq '..' ) { 
-			logme("[debug] show root\n") if $DEBUG;
+			logme("[debug] send $DOCROOT\n") if $DEBUG;
 			$uri = '';
-			return $uri;
+			return 0;
 		} else {
 			logme("[debug] Sx: @dirs\n") if $DEBUG;
-			reduce_path(\@dirs);
+			$seen = reduce_path(\@dirs, $seen);
 			logme("[debug] Rx: @dirs\n") if $DEBUG;
 			logme("[debug] Seen: $seen\n") if $DEBUG;
 		}   
 	}
-	return join('/', @dirs);
+	return 0;
 }
 
 sub reduce_path {
-    my $dirs = shift;
+    (my $dirs, $seen) = @_;
     for (1..((scalar @$dirs) - 1)) {
         if (@$dirs[$_] eq '..') {
             $seen++;
+			# remove .. and parent dir if $_ is ..
             splice @$dirs, $_, 1;
             splice @$dirs, ($_ - 1), 1;
-            return $dirs;
+            return $seen;
         }
     }
 }
 
 sub send_resp_headers {
-	my $media_type = shift;
+	my $media_type     = shift;
 	my $content_length = shift;
 
-	# HTTP use GMT 
+	# HTTP uses GMT 
 	my $date = strftime "%a, %d %b %Y %H:%M:%S GMT", gmtime();
 
 	my @response = (
 			"HTTP/1.1 $status_code ".$msgs{$status_code}->[0]."\r\n",
 			"Date: $date\r\n"
 		);
+
 	if ($content_length) {
 		logme("[debug] $media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 		push @response, (
@@ -306,11 +315,14 @@ sub send_resp_headers {
 	} else {
 		logme("[debug] $media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	}
+
+	# pass Location with / appended to $uri
 	if ($status_code == 301) {
 		push @response, (
 			'Location: http://'.inet_ntoa($socket->sockaddr()).':'.$socket->sockport()."${uri}/\r\n"
 		);
 	}
+
 	push @response, (
 		"Content-Type: $media_type; charset=iso-8859-1\r\n",
 		"Connection: close\r\n",
@@ -318,11 +330,13 @@ sub send_resp_headers {
 	);
 
 	logme("[debug] --- HTTP Response ---\n") if $DEBUG;
+
+	# send http response headers
 	foreach (@response) {
 		logme("[debug] $_") if $DEBUG;
 		print $client $_;
 	}
-	logme("[debug] --- END ---\n\n") if $DEBUG;
+	logme("[debug] --- END ---\n") if $DEBUG;
 
 	return 0;
 }
