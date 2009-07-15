@@ -20,7 +20,7 @@ use URI::Escape;
 my $DEBUG = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
-my (@files, @request, $req, $client, $seen, $uri, $status_code);
+my (@files, @request, $req, $client, $uri, $status_code);
 
 my %msgs = (
 	200 => [ 'OK'                                     ],
@@ -39,7 +39,7 @@ my $socket = new IO::Socket::INET (
 	Proto     => 'tcp',
 	Listen    => 5,
 	ReuseAddr => 1
-) or die "socket(): $!\n";
+) or die "socket(): $@\n";
 
 $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
@@ -87,15 +87,17 @@ sub getfiles {
 sub set_status_code {
 	(my $method, $uri) = @_;
 
+	$uri ||= '/';		# default if $uri is not defined
+
 	if ($method !~ /^GET/i) {
-		logme("501 Not Implemented\nr");
+		logme("501 Not Implemented\n");
 		$status_code = 501;
 	} else {
 		logme("[debug] URI orginal: $uri\n") if $DEBUG;
 		sanitize_uri() if defined $uri;
 		logme("[debug] URI: $uri\n") if $DEBUG;
 
-		my $path = $DOCROOT.$uri;
+		chomp(my $path = $DOCROOT.$uri);
 		if (-e $path) {
 
 			# is a file
@@ -153,7 +155,7 @@ sub handle_req {
 			logme($msgs{$status_code}->[1]." missing\n");
 			send_resp_headers("text/plain", 
 				length($status_code." ".$msgs{$status_code}->[0]));
-			print $client $status_code." ".$msgs{$status_code}->[0];
+			print $client $status_code." ".$msgs{$status_code}->[0]."\r\n";
 		}
 		return 0;
 	}
@@ -251,12 +253,10 @@ FOOTER
 }
 
 sub sanitize_uri {
-	# strip first slash and GET variables
-	#$uri =~ s/^\/([^\?]*).*/$1/;
+	# strip GET variables
 	$uri =~ s/([^\?]*).*/$1/;
 
-	#experimental url decoding
-	#$uri =~ s/\%([a-fA-F0-9]{2})/chr(hex($1))/ge;
+	# decode URI
 	$uri = uri_unescape($uri);
 
 	my @dirs = split /\//, $uri;
@@ -270,7 +270,7 @@ sub sanitize_uri {
 	while ($seen < $num) {
 		if ( $dirs[0] eq '..' ) { 
 			logme("[debug] send $DOCROOT\n") if $DEBUG;
-			$uri = '';
+			$uri = '/';
 			return 0;
 		} else {
 			logme("[debug] Sx: @dirs\n") if $DEBUG;
@@ -283,7 +283,7 @@ sub sanitize_uri {
 }
 
 sub reduce_path {
-    (my $dirs, $seen) = @_;
+    my ($dirs, $seen) = @_;
     for (1..((scalar @$dirs) - 1)) {
         if (@$dirs[$_] eq '..') {
             $seen++;
