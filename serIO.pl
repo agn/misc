@@ -1,21 +1,10 @@
 #!/usr/bin/perl -w
 
-#Caution: Big mess ahead
-#TODO: 
-#	http://perlmonks.org/index.pl?node_id=771769
-#	implement Getopt::Long
-#	usage() function
-#	log to syslog
-#	fork() children
-#	daemonize 
-#	persistent connections
-
 use strict;
 use IO::Socket;
 use LWP::MediaTypes;
 use POSIX;
 use URI::Escape;
-
 
 my $DEBUG = 1;
 my $DOCROOT = '/home/arun/downloads'; 
