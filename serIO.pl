@@ -6,7 +6,7 @@ use LWP::MediaTypes;
 use POSIX;
 use URI::Escape;
 
-my $DEBUG = 1;
+my $DEBUG   = 0;
 my $DOCROOT = '/home/arun/downloads'; 
 
 my (@files, @request, $req, $client, $uri, $status_code);
@@ -209,7 +209,7 @@ sub send_dir_list {
 HEADER
 
 	my $count;
-	foreach my $f (@$files) {
+	foreach my $f (sort @$files) {
 		printf $client "%s<td><a href=\"%s\">%s</a></td><td>%s</td></tr>",
 
 				# different colours for alternate rows
