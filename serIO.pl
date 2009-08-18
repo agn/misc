@@ -1,15 +1,16 @@
 #!/usr/bin/perl -w
 
 use strict;
+
+use POSIX;
 use IO::Socket;
 use LWP::MediaTypes;
-use POSIX;
 use URI::Escape;
 
 my $DEBUG   = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
-my (@files, @request, @children, $req, $client, $uri, $status_code);
+my (@files, @request, $child, $req, $client, $uri, $status_code);
 
 my %msgs = (
 	200 => [ 'OK'                                     ],
@@ -21,9 +22,10 @@ my %msgs = (
 );
 
 $SIG{'INT'} = \&cleanup;
+$SIG{'CHLD'} = \&reaper;
 
 my $socket = new IO::Socket::INET ( 
-	LocalAddr => '172.17.1.50',
+	LocalAddr => '127.0.0.1',
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
@@ -44,6 +46,7 @@ sub spawn {
 
 	unless ($pid) {
 		### child ###
+		# close the listening socket
 		close $socket;
 		@request = ();
 		logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
@@ -62,17 +65,18 @@ sub spawn {
 			handle_req($req);
 		}
 		logme("[debug] $$ exiting...\n") if $DEBUG;
+		# exit child when request is served
 		exit;
-	} else {
-		### parent ###
-		push @children, $pid;
-	}
+	} 
 }
 
 sub cleanup { 
-	waitpid($_, 0) foreach (@children);
 	close $socket;
    	die "Interrupted. Exiting...\n"; 
+}
+
+sub reaper {
+	waitpid(-1, 0);
 }
 
 sub logme {
