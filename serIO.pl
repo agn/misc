@@ -6,10 +6,10 @@ use LWP::MediaTypes;
 use POSIX;
 use URI::Escape;
 
-my $DEBUG   = 0;
+my $DEBUG   = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
-my (@files, @request, $req, $client, $uri, $status_code);
+my (@files, @request, @children, $req, $client, $uri, $status_code);
 
 my %msgs = (
 	200 => [ 'OK'                                     ],
@@ -34,27 +34,46 @@ $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
 while ($client = $socket->accept()) {
-	@request = ();
-	logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
-
-	# get http request - first line
-	logme("[debug] --- HTTP Request ---\n") if $DEBUG;
-	while (<$client>) {
-		last if /^\r\n$/;
-		logme("[debug] $_") if $DEBUG;
-		push @request, $_;
-	}
-	logme("[debug] --- END ---\n") if $DEBUG;
-	$req = $request[0];
-	if (defined $req) {
-		logme($client->peerhost()." ".$req);
-		handle_req($req);
-	}
-
+	spawn($client);
 	close $client;
 }
 
-sub cleanup { close $socket; die "Interrupted. Exiting...\n"; }
+sub spawn { 
+	my $client = shift;
+	defined (my $pid = fork()) or die "fork(): $!\n";
+
+	unless ($pid) {
+		### child ###
+		close $socket;
+		@request = ();
+		logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
+
+		# get http request - first line
+		logme("[debug] --- HTTP Request ---\n") if $DEBUG;
+		while (<$client>) {
+			last if /^\r\n$/;
+			logme("[debug] $_") if $DEBUG;
+			push @request, $_;
+		}
+		logme("[debug] --- END ---\n") if $DEBUG;
+		$req = $request[0];
+		if (defined $req) {
+			logme($client->peerhost()." ".$req);
+			handle_req($req);
+		}
+		logme("[debug] $$ exiting...\n") if $DEBUG;
+		exit;
+	} else {
+		### parent ###
+		push @children, $pid;
+	}
+}
+
+sub cleanup { 
+	waitpid($_, 0) foreach (@children);
+	close $socket;
+   	die "Interrupted. Exiting...\n"; 
+}
 
 sub logme {
 	my $msg = shift;
