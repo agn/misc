@@ -10,7 +10,7 @@ use URI::Escape;
 my $DEBUG   = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
-my (@files, @request, $child, $req, $client, $uri, $status_code);
+my (@files, $uri, $status_code);
 
 my %msgs = (
 	200 => [ 'OK'                                     ],
@@ -21,7 +21,7 @@ my %msgs = (
 	501 => [ 'Not Implemented',   $DOCROOT.'/501.html']
 );
 
-$SIG{'INT'} = \&cleanup;
+$SIG{'INT'}  = \&cleanup;
 $SIG{'CHLD'} = \&reaper;
 
 my $socket = new IO::Socket::INET ( 
@@ -35,9 +35,8 @@ my $socket = new IO::Socket::INET (
 $socket->listen();
 logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
-while ($client = $socket->accept()) {
+while (my $client = $socket->accept()) {
 	spawn($client);
-	close $client;
 }
 
 sub spawn { 
@@ -48,7 +47,8 @@ sub spawn {
 		### child ###
 		# close the listening socket
 		close $socket;
-		@request = ();
+		$| = 1;
+		my @request = ();
 		logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
 
 		# get http request - first line
@@ -59,15 +59,18 @@ sub spawn {
 			push @request, $_;
 		}
 		logme("[debug] --- END ---\n") if $DEBUG;
-		$req = $request[0];
+		my $req = $request[0];
 		if (defined $req) {
 			logme($client->peerhost()." ".$req);
-			handle_req($req);
+			handle_req($client, $req);
 		}
 		logme("[debug] $$ exiting...\n") if $DEBUG;
 		# exit child when request is served
+		close($client);
 		exit;
-	} 
+	} else {
+		close($client);
+	}
 }
 
 sub cleanup { 
@@ -76,7 +79,10 @@ sub cleanup {
 }
 
 sub reaper {
-	waitpid(-1, 0);
+	my $child;
+	do {
+		$child = waitpid(-1, 0);
+	} while $child > 0;
 }
 
 sub logme {
@@ -156,6 +162,7 @@ sub set_status_code {
 }
 
 sub handle_req {
+	my $client = shift;
 	(my $method, $uri) = split / +/, shift;
 
 	set_status_code( $method, $uri );
@@ -165,7 +172,7 @@ sub handle_req {
 			send_file($msgs{$status_code}->[1]);
 		} else {
 			logme($msgs{$status_code}->[1]." missing\n");
-			send_resp_headers("text/plain", 
+			send_resp_headers($client, "text/plain", 
 				length($status_code." ".$msgs{$status_code}->[0]));
 			print $client $status_code." ".$msgs{$status_code}->[0]."\r\n";
 		}
@@ -177,14 +184,14 @@ sub handle_req {
 
 	if (-f $path) {
 		#XXX what if the file isn't readable anymore ?
-		send_file($path) ;
+		send_file($client, $path) ;
 	}
 
 	if (-d $path) {
 		if (-f $path.'index.html') {
-			send_file($path.'index.html');
+			send_file($client, $path.'index.html');
 		} else {
-			send_dir_list($uri, getfiles($path));
+			send_dir_list($client, $uri, getfiles($path));
 		}
 	}
 
@@ -192,13 +199,12 @@ sub handle_req {
 }
 
 sub send_file {
-	my $file       = shift;
-
-	my $media_type = guess_media_type( $file );
-	my $size       = -s $file;
+	my ($client, $file) = @_;
+	my $media_type      = guess_media_type( $file );
+	my $size            = -s $file;
 	my $buffer;
 
-	send_resp_headers( $media_type, $size );
+	send_resp_headers($client, $media_type, $size);
 
 	open RES, '<', $file or die "open: $file: $!";
 	if (-B $file) {
@@ -219,9 +225,9 @@ sub send_file {
 }
 
 sub send_dir_list {
-	my ($uri, $files) = @_;
+	my ($client, $uri, $files) = @_;
 	logme("[info] dir listing request\n");
-	send_resp_headers("text/html");
+	send_resp_headers($client, "text/html");
 
 	# print html header
 	print $client <<HEADER;
@@ -308,8 +314,7 @@ sub reduce_path {
 }
 
 sub send_resp_headers {
-	my $media_type     = shift;
-	my $content_length = shift;
+	my ($client, $media_type, $content_length) = @_;
 
 	# HTTP uses GMT 
 	my $date = strftime "%a, %d %b %Y %H:%M:%S GMT", gmtime();
