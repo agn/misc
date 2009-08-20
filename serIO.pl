@@ -10,7 +10,7 @@ use URI::Escape;
 my $DEBUG   = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
-my (@files, $uri, $status_code);
+my ($uri, $status_code);
 
 my %msgs = (
 	200 => [ 'OK'                                     ],
@@ -33,7 +33,7 @@ my $socket = new IO::Socket::INET (
 ) or die "socket(): $@\n";
 
 $socket->listen();
-logme("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
+logmsg("Listening on ".$socket->sockhost().":".$socket->sockport."\n");
 
 while (my $client = $socket->accept()) {
 	spawn($client);
@@ -49,22 +49,22 @@ sub spawn {
 		close $socket;
 		$| = 1;
 		my @request = ();
-		logme("Connection from ".$client->peerhost().":".$client->peerport()."\n");
+		logmsg("Connection from ".$client->peerhost().":".$client->peerport()."\n");
 
 		# get http request - first line
-		logme("[debug] --- HTTP Request ---\n") if $DEBUG;
+		logmsg("[debug] --- HTTP Request ---\n") if $DEBUG;
 		while (<$client>) {
 			last if /^\r\n$/;
-			logme("[debug] $_") if $DEBUG;
+			logmsg("[debug] $_") if $DEBUG;
 			push @request, $_;
 		}
-		logme("[debug] --- END ---\n") if $DEBUG;
+		logmsg("[debug] --- END ---\n") if $DEBUG;
 		my $req = $request[0];
 		if (defined $req) {
-			logme($client->peerhost()." ".$req);
+			logmsg($client->peerhost()." ".$req);
 			handle_req($client, $req);
 		}
-		logme("[debug] $$ exiting...\n") if $DEBUG;
+		logmsg("[debug] $$ exiting...\n") if $DEBUG;
 		# exit child when request is served
 		close($client);
 		exit;
@@ -85,7 +85,7 @@ sub reaper {
 	} while $child > 0;
 }
 
-sub logme {
+sub logmsg {
 	my $msg = shift;
 	my $ts  = strftime "%b %e %H:%M:%S", localtime;
 	print $ts," $0\[$$\]: $msg";
@@ -96,7 +96,7 @@ sub getfiles {
 
 	opendir DIR, $dir or die "open:$!\n";
 	# remove . from list of files
-	@files = grep { !/^\.$/ } readdir DIR;
+	my @files = grep { !/^\.$/ } readdir DIR;
 	closedir DIR;
 
 	return \@files;
@@ -108,12 +108,12 @@ sub set_status_code {
 	$uri ||= '/';		# default if $uri is not defined
 
 	if ($method !~ /^GET/i) {
-		logme("501 Not Implemented\n");
+		logmsg("501 Not Implemented\n");
 		$status_code = 501;
 	} else {
-		logme("[debug] URI orginal: $uri\n") if $DEBUG;
+		logmsg("[debug] URI orginal: $uri\n") if $DEBUG;
 		sanitize_uri() if defined $uri;
-		logme("[debug] URI: $uri\n") if $DEBUG;
+		logmsg("[debug] URI: $uri\n") if $DEBUG;
 
 		chomp(my $path = $DOCROOT.$uri);
 		if (-e $path) {
@@ -121,10 +121,10 @@ sub set_status_code {
 			# is a file
 			if (-f $path) {
 				if (-r $path) {
-					logme("200 HTTP OK\n");
+					logmsg("200 HTTP OK\n");
 					$status_code = 200;
 				} else {
-					logme("403 Forbidden\n");
+					logmsg("403 Forbidden\n");
 					$status_code = 403;
 				}
 
@@ -134,27 +134,27 @@ sub set_status_code {
 
 					# check for / at the end 
 					if ($path !~ m/\/$/) {
-						logme("301 Moved Permanently\n");
+						logmsg("301 Moved Permanently\n");
 						$status_code = 301;
 					} else {
-						logme("200 HTTP OK\n");
+						logmsg("200 HTTP OK\n");
 						$status_code = 200;
 					}
 
 				} else {
-					logme("403 Forbidden\n");
+					logmsg("403 Forbidden\n");
 					$status_code = 403;
 				}
 
 			# not a file or directory
 			} else {
-				logme("406 Not Acceptable\n");
+				logmsg("406 Not Acceptable\n");
 				$status_code = 406;
 			}
 
 		# doesn't exist
 		} else {
-			logme("404 Not Found\n");
+			logmsg("404 Not Found\n");
 			$status_code = 404;
 		}
 	}
@@ -165,13 +165,13 @@ sub handle_req {
 	my $client = shift;
 	(my $method, $uri) = split / +/, shift;
 
-	set_status_code( $method, $uri );
+	set_status_code($method, $uri);
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
 			send_file($msgs{$status_code}->[1]);
 		} else {
-			logme($msgs{$status_code}->[1]." missing\n");
+			logmsg($msgs{$status_code}->[1]." missing\n");
 			send_resp_headers($client, "text/plain", 
 				length($status_code." ".$msgs{$status_code}->[0]));
 			print $client $status_code." ".$msgs{$status_code}->[0]."\r\n";
@@ -180,7 +180,7 @@ sub handle_req {
 	}
 
 	my $path = $DOCROOT.$uri;
-	logme("\$path: $path\n");
+	logmsg("\$path: $path\n");
 
 	if (-f $path) {
 		#XXX what if the file isn't readable anymore ?
@@ -210,9 +210,9 @@ sub send_file {
 	if (-B $file) {
 		binmode RES;
 		binmode $client;
-		logme("[debug] setting binmode on socket\n") if $DEBUG;
+		logmsg("[debug] setting binmode on socket\n") if $DEBUG;
 	}
-	logme("Sending $file\n\n");
+	logmsg("Sending $file\n\n");
 	while (my $len = read(RES, $buffer, 4096)) { 
 		die "read(): $!" unless defined $len;
 		if ($len != 0 && $client->connected()) {
@@ -226,7 +226,7 @@ sub send_file {
 
 sub send_dir_list {
 	my ($client, $uri, $files) = @_;
-	logme("[info] dir listing request\n");
+	logmsg("[info] dir listing request\n");
 	send_resp_headers($client, "text/html");
 
 	# print html header
@@ -280,21 +280,21 @@ sub sanitize_uri {
 	my @dirs = split /\//, $uri;
 	my $seen = 0;
 
-	logme("[debug] Dirs: @dirs \n") if $DEBUG;
+	logmsg("[debug] Dirs: @dirs \n") if $DEBUG;
 
 	my $num = grep { $_ eq '..' } @dirs;
-	logme("[debug] Number of ..: $num\n") if $DEBUG;
+	logmsg("[debug] Number of ..: $num\n") if $DEBUG;
 
 	while ($seen < $num) {
 		if ( $dirs[0] eq '..' ) { 
-			logme("[debug] send $DOCROOT\n") if $DEBUG;
+			logmsg("[debug] send $DOCROOT\n") if $DEBUG;
 			$uri = '/';
 			return 0;
 		} else {
-			logme("[debug] Sx: @dirs\n") if $DEBUG;
+			logmsg("[debug] Sx: @dirs\n") if $DEBUG;
 			$seen = reduce_path(\@dirs, $seen);
-			logme("[debug] Rx: @dirs\n") if $DEBUG;
-			logme("[debug] Seen: $seen\n") if $DEBUG;
+			logmsg("[debug] Rx: @dirs\n") if $DEBUG;
+			logmsg("[debug] Seen: $seen\n") if $DEBUG;
 		}   
 	}
 	return 0;
@@ -325,12 +325,12 @@ sub send_resp_headers {
 		);
 
 	if ($content_length) {
-		logme("[debug] $media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
+		logmsg("[debug] $media_type:$content_length:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 		push @response, (
 			"Content-Length: $content_length\r\n"
 		);
 	} else {
-		logme("[debug] $media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
+		logmsg("[debug] $media_type:".$msgs{$status_code}->[0]."\n") if $DEBUG;
 	}
 
 	# pass Location with / appended to $uri
@@ -346,14 +346,14 @@ sub send_resp_headers {
 		"\r\n"
 	);
 
-	logme("[debug] --- HTTP Response ---\n") if $DEBUG;
+	logmsg("[debug] --- HTTP Response ---\n") if $DEBUG;
 
 	# send http response headers
 	foreach (@response) {
-		logme("[debug] $_") if $DEBUG;
+		logmsg("[debug] $_") if $DEBUG;
 		print $client $_;
 	}
-	logme("[debug] --- END ---\n") if $DEBUG;
+	logmsg("[debug] --- END ---\n") if $DEBUG;
 
 	return 0;
 }
