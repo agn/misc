@@ -111,7 +111,7 @@ sub set_status_code {
 		logmsg("501 Not Implemented\n");
 		$status_code = 501;
 	} else {
-		logmsg("[debug] URI orginal: $uri\n") if $DEBUG;
+		logmsg("[debug] URI original: $uri\n") if $DEBUG;
 		sanitize_uri() if defined $uri;
 		logmsg("[debug] URI: $uri\n") if $DEBUG;
 
@@ -247,7 +247,7 @@ HEADER
 					: '<tr bgcolor="#dddddd">'
 				),
 
-				# genereate href links
+				# generate href links
 				(-d $DOCROOT.$uri.'/'.$f 
 					? $uri.uri_escape($f).'/'
 					: $uri.uri_escape($f)
@@ -291,7 +291,7 @@ sub sanitize_uri {
 			$uri = '/';
 			return 0;
 		} else {
-			logmsg("[debug] Sx: @dirs\n") if $DEBUG;
+			logmsg("[debug] Tx: @dirs\n") if $DEBUG;
 			$seen = reduce_path(\@dirs, $seen);
 			logmsg("[debug] Rx: @dirs\n") if $DEBUG;
 			logmsg("[debug] Seen: $seen\n") if $DEBUG;
