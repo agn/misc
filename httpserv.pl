@@ -10,6 +10,7 @@ use URI::Escape;
 my $DEBUG   = 1;
 my $DOCROOT = '/home/arun/downloads'; 
 
+# XXX Cleanup
 my ($uri, $status_code);
 
 my %msgs = (
@@ -22,10 +23,10 @@ my %msgs = (
 );
 
 $SIG{'INT'}  = \&cleanup;
-$SIG{'CHLD'} = \&reaper;
+$SIG{'CHLD'} = 'IGNORE';
 
 my $socket = new IO::Socket::INET ( 
-	LocalAddr => '127.0.0.1',
+	LocalAddr => '172.17.1.50',
 	LocalPort => (shift || 4321),
 	Proto     => 'tcp',
 	Listen    => 5,
@@ -76,13 +77,6 @@ sub spawn {
 sub cleanup { 
 	close $socket;
    	die "Interrupted. Exiting...\n"; 
-}
-
-sub reaper {
-	my $child;
-	do {
-		$child = waitpid(-1, 0);
-	} while $child > 0;
 }
 
 sub logmsg {
