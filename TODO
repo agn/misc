@@ -1,8 +1,6 @@
-Fix random crash introduced after fork()
 http://perlmonks.org/index.pl?node_id=771769
 implement Getopt::Long
 usage() function
 log to syslog
-fork() children
 daemonize 
 persistent connections
