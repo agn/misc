@@ -163,11 +163,10 @@ sub handle_req {
 
 	unless ($status_code == 200) {
 		if (-f $msgs{$status_code}->[1]) {
-			send_file($msgs{$status_code}->[1]);
+			send_file($client, $msgs{$status_code}->[1]);
 		} else {
 			logmsg($msgs{$status_code}->[1]." missing\n");
-			send_resp_headers($client, "text/plain", 
-				length($status_code." ".$msgs{$status_code}->[0]));
+			send_resp_headers($client, "text/plain", length($status_code." ".$msgs{$status_code}->[0]));
 			print $client $status_code." ".$msgs{$status_code}->[0]."\r\n";
 		}
 		return 0;
@@ -271,7 +270,8 @@ sub sanitize_uri {
 	# decode URI
 	$uri = uri_unescape($uri);
 
-	my @dirs = split /\//, $uri;
+	#FIXME
+	my @dirs = grep { $_ !~ /^\.?$/ } split /\//, $uri;
 	my $seen = 0;
 
 	logmsg("[debug] Dirs: @dirs \n") if $DEBUG;
@@ -280,7 +280,8 @@ sub sanitize_uri {
 	logmsg("[debug] Number of ..: $num\n") if $DEBUG;
 
 	while ($seen < $num) {
-		if ( $dirs[0] eq '..' ) { 
+	#FIXME
+		if ( $dirs[0] eq '..' || $dirs[0] eq '.' ) { 
 			logmsg("[debug] send $DOCROOT\n") if $DEBUG;
 			$uri = '/';
 			return 0;
